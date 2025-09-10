@@ -1,40 +1,41 @@
+import { db } from '../db';
+import { menuItemsTable } from '../db/schema';
 import { type GetMenuItemsInput, type MenuItem } from '../schema';
+import { eq, and, asc, SQL } from 'drizzle-orm';
 
 export async function getMenuItems(input: GetMenuItemsInput): Promise<MenuItem[]> {
-    // This is a placeholder declaration! Real code should be implemented here.
-    // The goal of this handler is fetching menu items with optional filtering by category and availability.
-    // Should include related size pricing data and support pagination.
-    // For customer-facing requests, should only return items where is_available = true.
-    return Promise.resolve([
-        {
-            id: 1,
-            category_id: 1,
-            name: "Americano",
-            description: "Rich espresso with hot water",
-            base_price: 4.50,
-            is_available: true,
-            has_size_options: true,
-            has_milk_options: false,
-            max_extra_shots: 3,
-            sort_order: 1,
-            image_url: null,
-            created_at: new Date(),
-            updated_at: new Date()
-        },
-        {
-            id: 2,
-            category_id: 1,
-            name: "Latte",
-            description: "Espresso with steamed milk and light foam",
-            base_price: 5.25,
-            is_available: true,
-            has_size_options: true,
-            has_milk_options: true,
-            max_extra_shots: 2,
-            sort_order: 2,
-            image_url: null,
-            created_at: new Date(),
-            updated_at: new Date()
-        }
-    ] as MenuItem[]);
+  try {
+    // Build conditions array for filtering
+    const conditions: SQL<unknown>[] = [];
+
+    if (input.category_id !== undefined) {
+      conditions.push(eq(menuItemsTable.category_id, input.category_id));
+    }
+
+    if (input.is_available !== undefined) {
+      conditions.push(eq(menuItemsTable.is_available, input.is_available));
+    }
+
+    // Build the complete query
+    const baseQuery = db.select().from(menuItemsTable);
+    
+    const finalQuery = conditions.length > 0
+      ? baseQuery.where(conditions.length === 1 ? conditions[0] : and(...conditions))
+      : baseQuery;
+
+    const results = await finalQuery
+      .orderBy(asc(menuItemsTable.sort_order))
+      .limit(input.limit)
+      .offset(input.offset)
+      .execute();
+
+    // Convert numeric fields from string to number
+    return results.map(item => ({
+      ...item,
+      base_price: parseFloat(item.base_price)
+    }));
+  } catch (error) {
+    console.error('Failed to fetch menu items:', error);
+    throw error;
+  }
 }

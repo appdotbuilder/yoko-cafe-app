@@ -1,23 +1,69 @@
+import { db } from '../db';
+import { menuItemsTable } from '../db/schema';
 import { type UpdateMenuItemInput, type MenuItem } from '../schema';
+import { eq, sql } from 'drizzle-orm';
 
 export async function updateMenuItem(input: UpdateMenuItemInput): Promise<MenuItem> {
-    // This is a placeholder declaration! Real code should be implemented here.
-    // The goal of this handler is updating menu item details for admin/staff dashboard.
-    // Should validate that the menu item exists and update only provided fields.
-    // Should also update the updated_at timestamp.
-    return Promise.resolve({
-        id: input.id,
-        category_id: 1, // This would come from existing record
-        name: input.name || "Americano", // Use provided value or existing
-        description: input.description !== undefined ? input.description : "Rich espresso with hot water",
-        base_price: input.base_price || 4.50,
-        is_available: input.is_available !== undefined ? input.is_available : true,
-        has_size_options: input.has_size_options !== undefined ? input.has_size_options : true,
-        has_milk_options: input.has_milk_options !== undefined ? input.has_milk_options : false,
-        max_extra_shots: input.max_extra_shots !== undefined ? input.max_extra_shots : 3,
-        sort_order: input.sort_order !== undefined ? input.sort_order : 1,
-        image_url: input.image_url !== undefined ? input.image_url : null,
-        created_at: new Date(), // This would come from existing record
-        updated_at: new Date() // This should be updated to current timestamp
-    } as MenuItem);
+  try {
+    // First, check if the menu item exists
+    const existingItems = await db.select()
+      .from(menuItemsTable)
+      .where(eq(menuItemsTable.id, input.id))
+      .execute();
+
+    if (existingItems.length === 0) {
+      throw new Error(`Menu item with id ${input.id} not found`);
+    }
+
+    // Build update object with only provided fields
+    const updateData: any = {
+      updated_at: sql`now()` // Always update the timestamp
+    };
+
+    if (input.name !== undefined) {
+      updateData.name = input.name;
+    }
+    if (input.description !== undefined) {
+      updateData.description = input.description;
+    }
+    if (input.base_price !== undefined) {
+      updateData.base_price = input.base_price.toString(); // Convert number to string for numeric column
+    }
+    if (input.is_available !== undefined) {
+      updateData.is_available = input.is_available;
+    }
+    if (input.has_size_options !== undefined) {
+      updateData.has_size_options = input.has_size_options;
+    }
+    if (input.has_milk_options !== undefined) {
+      updateData.has_milk_options = input.has_milk_options;
+    }
+    if (input.max_extra_shots !== undefined) {
+      updateData.max_extra_shots = input.max_extra_shots;
+    }
+    if (input.sort_order !== undefined) {
+      updateData.sort_order = input.sort_order;
+    }
+    if (input.image_url !== undefined) {
+      updateData.image_url = input.image_url;
+    }
+
+    // Perform the update
+    const result = await db.update(menuItemsTable)
+      .set(updateData)
+      .where(eq(menuItemsTable.id, input.id))
+      .returning()
+      .execute();
+
+    const updatedItem = result[0];
+    
+    // Convert numeric fields back to numbers before returning
+    return {
+      ...updatedItem,
+      base_price: parseFloat(updatedItem.base_price) // Convert string back to number
+    };
+  } catch (error) {
+    console.error('Menu item update failed:', error);
+    throw error;
+  }
 }

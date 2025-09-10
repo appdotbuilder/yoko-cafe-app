@@ -1,19 +1,63 @@
+import { db } from '../db';
+import { paymentsTable, ordersTable } from '../db/schema';
 import { type UpdatePaymentStatusInput, type Payment } from '../schema';
+import { eq, and } from 'drizzle-orm';
 
-export async function updatePaymentStatus(input: UpdatePaymentStatusInput): Promise<Payment> {
-    // This is a placeholder declaration! Real code should be implemented here.
-    // The goal of this handler is updating payment status after receiving webhook from payment gateway.
-    // Should validate that the payment exists and update status and gateway response.
-    // Should also trigger order confirmation if payment is completed successfully.
-    return Promise.resolve({
-        id: input.id,
-        order_id: 1, // This would come from existing record
-        amount: 25.50, // This would come from existing record
-        payment_method: 'credit_card', // This would come from existing record
-        payment_status: input.payment_status,
-        transaction_id: input.transaction_id !== undefined ? input.transaction_id : null,
-        payment_gateway_response: input.payment_gateway_response !== undefined ? input.payment_gateway_response : null,
-        created_at: new Date(), // This would come from existing record
-        updated_at: new Date() // This should be updated to current timestamp
-    } as Payment);
-}
+export const updatePaymentStatus = async (input: UpdatePaymentStatusInput): Promise<Payment> => {
+  try {
+    // First, verify the payment exists and get current data
+    const existingPayments = await db.select()
+      .from(paymentsTable)
+      .where(eq(paymentsTable.id, input.id))
+      .execute();
+
+    if (existingPayments.length === 0) {
+      throw new Error(`Payment with ID ${input.id} not found`);
+    }
+
+    const existingPayment = existingPayments[0];
+
+    // Build update object with only provided fields
+    const updateData: any = {
+      payment_status: input.payment_status,
+      updated_at: new Date()
+    };
+
+    if (input.transaction_id !== undefined) {
+      updateData.transaction_id = input.transaction_id;
+    }
+
+    if (input.payment_gateway_response !== undefined) {
+      updateData.payment_gateway_response = input.payment_gateway_response;
+    }
+
+    // Update the payment record
+    const result = await db.update(paymentsTable)
+      .set(updateData)
+      .where(eq(paymentsTable.id, input.id))
+      .returning()
+      .execute();
+
+    const updatedPayment = result[0];
+
+    // If payment is completed successfully, update order status to confirmed
+    if (input.payment_status === 'completed') {
+      await db.update(ordersTable)
+        .set({
+          status: 'confirmed',
+          updated_at: new Date()
+        })
+        .where(eq(ordersTable.id, existingPayment.order_id))
+        .execute();
+    }
+
+    // Convert numeric fields back to numbers before returning
+    return {
+      ...updatedPayment,
+      amount: parseFloat(updatedPayment.amount)
+    };
+  } catch (error) {
+    console.error('Payment status update failed:', error);
+    throw error;
+  }
+};
